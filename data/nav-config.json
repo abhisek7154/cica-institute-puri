@@ -1,0 +1,7 @@
+{
+  "home": true,
+  "gallery": true,
+  "notices": true,
+  "courses": true,
+  "contact": true
+}
