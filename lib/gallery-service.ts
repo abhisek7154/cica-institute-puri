@@ -4,7 +4,7 @@ import {
   listCloudinaryImagesForSync,
   uploadImageToCloudinary
 } from "@/lib/cloudinary";
-import { readJsonFile } from "@/lib/file-store";
+import { readJsonFile, writeJsonFile } from "@/lib/file-store";
 import { prisma } from "@/lib/prisma";
 import { GalleryImage } from "@/lib/types";
 
@@ -165,30 +165,51 @@ async function bootstrapGalleryFromLocalFileIfEmpty() {
 }
 
 export async function listGalleryImages(category?: string): Promise<GalleryImage[]> {
-  let images: PrismaGalleryImage[] = await prisma.galleryImage.findMany({
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
-  });
+  try {
+    let images: PrismaGalleryImage[] = await prisma.galleryImage.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
+    });
 
-  if (images.length === 0) {
-    try {
-      await bootstrapGalleryFromCloudinaryIfEmpty();
-      if ((await prisma.galleryImage.count()) === 0) {
-        await bootstrapGalleryFromLocalFileIfEmpty();
+    if (images.length === 0) {
+      try {
+        await bootstrapGalleryFromCloudinaryIfEmpty();
+        if ((await prisma.galleryImage.count()) === 0) {
+          await bootstrapGalleryFromLocalFileIfEmpty();
+        }
+        images = await prisma.galleryImage.findMany({
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
+        });
+      } catch {
+        // Keep empty list or fallback
       }
-      images = await prisma.galleryImage.findMany({
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
-      });
-    } catch {
-      // Keep an empty list when cloud bootstrap is unavailable.
     }
+
+    if (images.length > 0) {
+      const filterKey = category ? normalizeCategoryKey(category) : null;
+      const filtered = filterKey
+        ? images.filter((image) => normalizeCategoryKey(image.category) === filterKey)
+        : images;
+
+      return filtered.map(toClientImage);
+    }
+  } catch {
+    // Fall through to local json store fallback
   }
 
-  const filterKey = category ? normalizeCategoryKey(category) : null;
-  const filtered = filterKey
-    ? images.filter((image) => normalizeCategoryKey(image.category) === filterKey)
-    : images;
+  const localSeed = await readJsonFile<Array<{ id?: string; url: string; alt?: string; title?: string; category?: string }>>("gallery.json", []);
+  const localImages: GalleryImage[] = localSeed.map((item, index) => ({
+    id: item.id || `gallery-${index + 1}`,
+    url: item.url,
+    alt: item.alt || item.title || "Gallery image",
+    title: item.title || item.alt || "Gallery image",
+    category: item.category || "Campus",
+    sortOrder: index
+  }));
 
-  return filtered.map(toClientImage);
+  const filterKey = category ? normalizeCategoryKey(category) : null;
+  return filterKey
+    ? localImages.filter((img) => normalizeCategoryKey(img.category) === filterKey)
+    : localImages;
 }
 
 export async function createGalleryImages(
@@ -198,19 +219,44 @@ export async function createGalleryImages(
     return [];
   }
 
-  const startOrder = await getTopSortStart(entries.length - 1);
-  const created = await prisma.$transaction(
-    entries.map((entry, index) =>
-      prisma.galleryImage.create({
-        data: {
-          ...entry,
-          sortOrder: startOrder + index
-        }
-      })
-    )
-  );
+  try {
+    const startOrder = await getTopSortStart(entries.length - 1);
+    const created = await prisma.$transaction(
+      entries.map((entry, index) =>
+        prisma.galleryImage.create({
+          data: {
+            ...entry,
+            sortOrder: startOrder + index
+          }
+        })
+      )
+    );
 
-  return created.map(toClientImage);
+    return created.map(toClientImage);
+  } catch {
+    // Fall back to local file store
+  }
+
+  const current = await readJsonFile<Array<{ id?: string; url: string; alt?: string; title?: string; category?: string }>>("gallery.json", []);
+  const newItems = entries.map((entry, idx) => ({
+    id: `gallery-${Date.now()}-${idx}`,
+    url: entry.imageUrl,
+    alt: entry.title,
+    title: entry.title,
+    category: entry.category
+  }));
+
+  const updated = [...newItems, ...current];
+  await writeJsonFile("gallery.json", updated);
+
+  return newItems.map((item, index) => ({
+    id: item.id,
+    url: item.url,
+    alt: item.alt,
+    title: item.title,
+    category: item.category,
+    sortOrder: index
+  }));
 }
 
 function parseMeta(metaRaw: FormDataEntryValue | null) {
@@ -243,7 +289,7 @@ export async function uploadGalleryImagesFromFormData(formData: FormData) {
   }
 
   const meta = parseMeta(formData.get("meta"));
-  const defaultTitle = String(formData.get("title") ?? formData.get("alt") ?? "School image");
+  const defaultTitle = String(formData.get("title") ?? formData.get("alt") ?? "Gallery image");
   const defaultCategory = normalizeCategory(String(formData.get("category") ?? "Campus"));
   const createEntries: GalleryCreateInput[] = [];
 
@@ -252,11 +298,22 @@ export async function uploadGalleryImagesFromFormData(formData: FormData) {
     const category = normalizeCategory(fileMeta.category ?? defaultCategory);
     const fallbackTitle = file.name?.trim() ? file.name : defaultTitle;
     const title = normalizeTitle(fileMeta.title ?? fileMeta.alt ?? defaultTitle, fallbackTitle);
-    const upload = await uploadImageToCloudinary(file, { category, title });
+    
+    let imageUrl = "";
+    let publicId = "";
+    try {
+      const upload = await uploadImageToCloudinary(file, { category, title });
+      imageUrl = upload.secureUrl;
+      publicId = upload.publicId;
+    } catch {
+      // If Cloudinary upload fails, use object/data fallback if needed or local placeholder
+      imageUrl = `/images/${file.name}`;
+      publicId = `local:${Date.now()}-${index}`;
+    }
 
     createEntries.push({
-      imageUrl: upload.secureUrl,
-      publicId: upload.publicId,
+      imageUrl,
+      publicId,
       category,
       title
     });
@@ -269,15 +326,39 @@ export async function updateGalleryImageMetadata(
   id: string,
   data: { title: string; category: string }
 ) {
-  const updated = await prisma.galleryImage.update({
-    where: { id },
-    data: {
-      title: normalizeTitle(data.title, "School image"),
-      category: normalizeCategory(data.category)
-    }
-  });
+  try {
+    const updated = await prisma.galleryImage.update({
+      where: { id },
+      data: {
+        title: normalizeTitle(data.title, "Gallery image"),
+        category: normalizeCategory(data.category)
+      }
+    });
 
-  return toClientImage(updated);
+    return toClientImage(updated);
+  } catch {
+    // Fall back to local file store
+  }
+
+  const current = await readJsonFile<Array<{ id?: string; url: string; alt?: string; title?: string; category?: string }>>("gallery.json", []);
+  const index = current.findIndex((item, i) => (item.id || `gallery-${i + 1}`) === id);
+  if (index !== -1) {
+    current[index] = {
+      ...current[index],
+      title: normalizeTitle(data.title, "Gallery image"),
+      category: normalizeCategory(data.category)
+    };
+    await writeJsonFile("gallery.json", current);
+    return {
+      id,
+      url: current[index].url,
+      alt: current[index].title || "",
+      title: current[index].title || "",
+      category: current[index].category || "Campus"
+    };
+  }
+
+  return null;
 }
 
 export async function reorderGalleryImages(ids: string[]) {
@@ -285,35 +366,61 @@ export async function reorderGalleryImages(ids: string[]) {
     return [];
   }
 
-  const existingCount = await prisma.galleryImage.count({
-    where: { id: { in: ids } }
-  });
+  try {
+    const existingCount = await prisma.galleryImage.count({
+      where: { id: { in: ids } }
+    });
 
-  if (existingCount !== ids.length) {
-    throw new Error("Reorder payload has unknown IDs.");
+    if (existingCount === ids.length) {
+      await prisma.$transaction(
+        ids.map((id, index) =>
+          prisma.galleryImage.update({
+            where: { id },
+            data: { sortOrder: index }
+          })
+        )
+      );
+
+      return listGalleryImages();
+    }
+  } catch {
+    // Fall back to local file store
   }
 
-  await prisma.$transaction(
-    ids.map((id, index) =>
-      prisma.galleryImage.update({
-        where: { id },
-        data: { sortOrder: index }
-      })
-    )
-  );
-
+  const current = await readJsonFile<Array<{ id?: string; url: string; alt?: string; title?: string; category?: string }>>("gallery.json", []);
+  const map = new Map(current.map((item, i) => [item.id || `gallery-${i + 1}`, item]));
+  const reordered: typeof current = [];
+  for (const id of ids) {
+    const found = map.get(id);
+    if (found) reordered.push(found);
+  }
+  await writeJsonFile("gallery.json", reordered);
   return listGalleryImages();
 }
 
 export async function deleteGalleryImageById(id: string) {
-  const image = await prisma.galleryImage.findUnique({ where: { id } });
-  if (!image) {
-    return null;
+  try {
+    const image = await prisma.galleryImage.findUnique({ where: { id } });
+    if (image) {
+      if (!image.publicId.startsWith("local:")) {
+        try {
+          await deleteImageFromCloudinary(image.publicId);
+        } catch {
+          // ignore cloudinary error
+        }
+      }
+      await prisma.galleryImage.delete({ where: { id } });
+      return toClientImage(image);
+    }
+  } catch {
+    // Fall back to local file store
   }
 
-  if (!image.publicId.startsWith("local:")) {
-    await deleteImageFromCloudinary(image.publicId);
+  const current = await readJsonFile<Array<{ id?: string; url: string; alt?: string; title?: string; category?: string }>>("gallery.json", []);
+  const filtered = current.filter((item, i) => (item.id || `gallery-${i + 1}`) !== id);
+  if (filtered.length !== current.length) {
+    await writeJsonFile("gallery.json", filtered);
   }
-  await prisma.galleryImage.delete({ where: { id } });
-  return toClientImage(image);
+  return null;
 }
+

@@ -23,6 +23,7 @@ export interface GalleryImage {
   sortOrder?: number;
 }
 
+
 export type GalleryDisplayMode = "grid" | "slideshow";
 
 export interface GalleryDisplayConfig {
@@ -46,6 +47,7 @@ export interface NoticeItem {
   content: string;
   date: string;
   type: NoticeType;
+  gcalEventId?: string;
   createdAt?: string;
 }
 

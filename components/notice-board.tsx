@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {Bell, Calendar, SunMedium, Eye } from "lucide-react";
+import { Bell, Calendar, SunMedium, Eye, Clock } from "lucide-react";
 import { SectionHeading } from "@/components/section-heading";
 import { NoticeItem, NoticeType } from "@/lib/types";
 import { formatDate } from "@/lib/format";
+import { getUpcomingInfo } from "@/lib/upcoming-utils";
+
+type FilterTab = "all" | "upcoming" | NoticeType;
 
 const noticeTypeClasses: Record<NoticeType, string> = {
   daily: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/25 dark:text-blue-200 dark:border-blue-800",
@@ -12,8 +15,9 @@ const noticeTypeClasses: Record<NoticeType, string> = {
   observation: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-200 dark:border-purple-800",
 };
 
-const noticeTabs: Array<{ key: "all" | NoticeType; label: string }> = [
+const noticeTabs: Array<{ key: FilterTab; label: string }> = [
   { key: "all", label: "All" },
+  { key: "upcoming", label: "Upcoming" },
   { key: "daily", label: "Daily" },
   { key: "holiday", label: "Holidays" },
   { key: "observation", label: "Observation Days" }
@@ -24,29 +28,30 @@ interface NoticeBoardProps {
 }
 
 export function NoticeBoard({ initialNotices }: NoticeBoardProps) {
-  const [tab, setTab] = useState<"all" | NoticeType>("all");
+  const [tab, setTab] = useState<FilterTab>("all");
 
- const filtered = useMemo(() => {
-
+  const filtered = useMemo(() => {
     const today = new Date();
-    today.setHours(0,0,0,0);
+    today.setHours(0, 0, 0, 0);
 
-    const activeNotices = initialNotices.filter((notice)=>{
-
+    const activeNotices = initialNotices.filter((notice) => {
       const noticeDate = new Date(notice.date);
-      noticeDate.setHours(0,0,0,0);
-
+      noticeDate.setHours(0, 0, 0, 0);
       return noticeDate >= today;
-
     });
 
-
     const sorted = [...activeNotices].sort(
-      (a,b)=> +new Date(a.date) - +new Date(b.date)
+      (a, b) => +new Date(a.date) - +new Date(b.date)
     );
+
     if (tab === "all") {
       return sorted;
     }
+
+    if (tab === "upcoming") {
+      return sorted.filter((notice) => getUpcomingInfo(notice.date).isUpcoming);
+    }
+
     return sorted.filter((notice) => notice.type === tab);
   }, [initialNotices, tab]);
 
@@ -85,36 +90,49 @@ export function NoticeBoard({ initialNotices }: NoticeBoardProps) {
             No notices available for this filter.
           </p>
         ) : (
-          filtered.map((notice) => (
-            <article
-              key={notice.id}
-              className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.15em] ${noticeTypeClasses[notice.type]}`}
-                >
-                  {notice.type === "daily" ? (
-                    <SunMedium className="h-3.5 w-3.5" />
-                  ) : notice.type === "holiday" ? (
-                    <Calendar className="h-3.5 w-3.5" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" />
-                  )}
-                  {notice.type}
-                </span>
-                <span className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
-                  <Bell className="h-3.5 w-3.5" /> {formatDate(notice.date)}
-                </span>
-              </div>
-              <h3 className="mt-4 break-words text-lg font-semibold text-slate-900 dark:text-slate-100">
-                {notice.title}
-              </h3>
-              <p className="mt-2 break-all text-sm text-slate-600 sm:break-words dark:text-slate-300">
-                {notice.content}
-              </p>
-            </article>
-          ))
+          filtered.map((notice) => {
+            const upcomingInfo = getUpcomingInfo(notice.date);
+
+            return (
+              <article
+                key={notice.id}
+                className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-700 dark:bg-slate-900"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.15em] ${noticeTypeClasses[notice.type]}`}
+                  >
+                    {notice.type === "daily" ? (
+                      <SunMedium className="h-3.5 w-3.5" />
+                    ) : notice.type === "holiday" ? (
+                      <Calendar className="h-3.5 w-3.5" />
+                    ) : (
+                      <Eye className="h-3.5 w-3.5" />
+                    )}
+                    {notice.type}
+                  </span>
+
+                  {upcomingInfo.isUpcoming && upcomingInfo.label ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                      <Clock className="h-3.5 w-3.5" />
+                      {upcomingInfo.label}
+                    </span>
+                  ) : null}
+
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
+                    <Bell className="h-3.5 w-3.5" /> {formatDate(notice.date)}
+                  </span>
+                </div>
+
+                <h3 className="mt-4 break-words text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  {notice.title}
+                </h3>
+                <p className="mt-2 break-all text-sm text-slate-600 sm:break-words dark:text-slate-300">
+                  {notice.content}
+                </p>
+              </article>
+            );
+          })
         )}
       </div>
     </section>
