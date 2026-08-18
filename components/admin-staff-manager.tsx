@@ -340,7 +340,7 @@ export function AdminStaffManager({
         className="rounded-xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900"
       >
         <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-          Add Teacher
+          Add Course
         </h3>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <input
@@ -348,7 +348,7 @@ export function AdminStaffManager({
             onChange={(event) =>
               setStaffForm((current) => ({ ...current, name: event.target.value }))
             }
-            placeholder="Teacher name"
+            placeholder="Course name"
             required
             className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
           />
@@ -357,7 +357,7 @@ export function AdminStaffManager({
             onChange={(event) =>
               setStaffForm((current) => ({ ...current, subject: event.target.value }))
             }
-            placeholder="Subject"
+            placeholder="Level / Category (e.g. Diploma, Programming)"
             required
             className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
           />
@@ -373,7 +373,7 @@ export function AdminStaffManager({
           <div className="relative mt-3 h-36 w-full overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
             <Image
               src={staffImagePreview}
-              alt="Teacher preview"
+              alt="Course preview"
               fill
               className="object-cover"
             />
@@ -385,7 +385,7 @@ export function AdminStaffManager({
           onChange={(event) =>
             setStaffForm((current) => ({ ...current, bio: event.target.value }))
           }
-          placeholder="Teacher bio"
+          placeholder="Course description"
           required
           className="mt-3 min-h-[44px] w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
         />
@@ -394,7 +394,7 @@ export function AdminStaffManager({
           className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 sm:w-auto"
         >
           <Plus className="h-4 w-4" />
-          Add Teacher
+          Add Course
         </button>
       </form>
 
@@ -403,10 +403,10 @@ export function AdminStaffManager({
         className="rounded-xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900"
       >
         <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-          Upload Staff PDF
+          Upload Course PDF / Syllabus
         </h3>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-          Upload or replace the downloadable PDF for a selected staff card.
+          Upload or replace the downloadable PDF / syllabus guide for a selected course.
         </p>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -417,7 +417,7 @@ export function AdminStaffManager({
             className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
           >
             <option value="" disabled>
-              Select staff member
+              Select course
             </option>
             {staff.map((item) => (
               <option key={item.id} value={item.id}>
@@ -442,7 +442,7 @@ export function AdminStaffManager({
 
         {selectedStaff?.pdfUrl ? (
           <p className="mt-2 break-words text-xs text-slate-500 dark:text-slate-400">
-            Current PDF: {selectedStaff.pdfTitle ?? "Staff Profile"}
+            Current PDF: {selectedStaff.pdfTitle ?? "Course Guide"}
           </p>
         ) : null}
 
@@ -452,7 +452,7 @@ export function AdminStaffManager({
           className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
         >
           <Plus className="h-4 w-4" />
-          {pdfUploading ? "Uploading..." : "Upload Staff PDF"}
+          {pdfUploading ? "Uploading..." : "Upload Course PDF"}
         </button>
       </form>
 
@@ -466,7 +466,7 @@ export function AdminStaffManager({
           ))
         ) : staff.length === 0 ? (
           <p className="col-span-full rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-            No staff members found.
+            No courses found.
           </p>
         ) : (
           staff.map((member) => (

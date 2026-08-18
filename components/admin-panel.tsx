@@ -6,7 +6,6 @@ import {
   AlertCircle,
   ArrowLeft,
   Bell,
-  CalendarDays,
   CheckCircle2,
   FileText,
   GripVertical,
@@ -15,12 +14,12 @@ import {
   Loader2,
   LogOut,
   Megaphone,
-  MapPin,
   Menu,
   Pencil,
   Plus,
   Settings,
   Shield,
+  Sparkles,
   Trash2,
   UploadCloud,
   X,
@@ -53,7 +52,6 @@ import {
   useState
 } from "react";
 import {
-  EventItem,
   GalleryDisplayMode,
   GalleryImage,
   NoticeItem,
@@ -66,13 +64,11 @@ import { AdminAnnouncementsManager } from "@/components/admin-announcements-mana
 
 type SectionKey =
   | "overview"
-  | "events"
+  | "courses"
   | "notices"
   | "announcements"
   | "gallery"
   | "documents"
-  | "staff"
-  | "popup"
   | "settings";
 type ToastType = "success" | "error";
 
@@ -95,15 +91,6 @@ interface UploadDraft {
   preview: string;
   alt: string;
   category: string;
-}
-
-interface EventFormState {
-  title: string;
-  date: string;
-  location: string;
-  category: string;
-  type: "event" | "exam";
-  description: string;
 }
 
 interface NoticeFormState {
@@ -129,30 +116,18 @@ const sidebarItems: Array<{
   icon: LucideIcon;
 }> = [
   { key: "overview", label: "Dashboard Overview", icon: LayoutDashboard },
-  { key: "popup", label:"Event Popup", icon: ImageIcon},
-  { key: "events", label: "Events", icon: CalendarDays },
+  { key: "courses", label: "Courses", icon: Shield },
   { key: "notices", label: "Notices", icon: Bell },
   { key: "announcements", label: "Announcements", icon: Megaphone },
   { key: "gallery", label: "Gallery", icon: ImageIcon },
   { key: "documents", label: "Documents", icon: FileText },
-  { key: "staff", label: "Staff", icon: Shield },
   { key: "settings", label: "Settings", icon: Settings }
-  
 ];
 
 const noticeTypeStyles: Record<NoticeType, string> = {
   daily: "bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
   holiday: "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
   observation: "bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800"
-};
-
-const initialEventForm: EventFormState = {
-  title: "",
-  date: "",
-  location: "",
-  category: "General",
-  type: "event",
-  description: ""
 };
 
 const initialNoticeForm: NoticeFormState = {
@@ -180,14 +155,6 @@ function formatPrettyDate(value: string) {
     month: "short",
     year: "numeric"
   }).format(parsed);
-}
-
-function normalizeEventItem(item: EventItem): EventItem {
-  return {
-    ...item,
-    category:
-      item.category?.trim() || (item.type === "exam" ? "Exam" : "General")
-  };
 }
 
 function SortableListItem({
@@ -255,8 +222,6 @@ function SortableImageCard({
 }
 
 export function AdminPanel() {
-  const [popupImage, setPopupImage] = useState("");
-  const [popupActive, setPopupActive] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [pin, setPin] = useState("");
@@ -267,19 +232,14 @@ export function AdminPanel() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
 
-  const [events, setEvents] = useState<EventItem[]>([]);
   const [notices, setNotices] = useState<NoticeItem[]>([]);
   const [images, setImages] = useState<GalleryImage[]>([]);
-
-  const [eventForm, setEventForm] = useState<EventFormState>(initialEventForm);
-  const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  const [eventEditForm, setEventEditForm] =
-    useState<EventFormState>(initialEventForm);
 
   const [noticeForm, setNoticeForm] = useState<NoticeFormState>(initialNoticeForm);
   const [editingNoticeId, setEditingNoticeId] = useState<string | null>(null);
   const [noticeEditForm, setNoticeEditForm] =
     useState<NoticeFormState>(initialNoticeForm);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const [uploadDrafts, setUploadDrafts] = useState<UploadDraft[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -383,30 +343,24 @@ export function AdminPanel() {
     setLoadingData(true);
 
     try {
-      const [eventsRes, noticesRes, imagesRes] = await Promise.all([
-        fetch("/api/events", { cache: "no-store" }),
+      const [noticesRes, imagesRes] = await Promise.all([
         fetch("/api/notices", { cache: "no-store" }),
         fetch("/api/admin/images", { cache: "no-store" })
       ]);
 
-      const [eventsPayload, noticesPayload, imagesPayload] = await Promise.all([
-        eventsRes.json(),
-        noticesRes.json(),
-        imagesRes.json()
-      ]);
+      let nextNotices: NoticeItem[] = [];
+      let nextImages: GalleryImage[] = [];
 
-      if (!eventsRes.ok || !noticesRes.ok || !imagesRes.ok) {
-        throw new Error("Unable to load dashboard data.");
+      if (noticesRes.ok) {
+        const payload = await noticesRes.json().catch(() => ({}));
+        nextNotices = (payload as { notices?: NoticeItem[] }).notices ?? [];
       }
 
-      const nextEvents = ((eventsPayload as { events?: EventItem[] }).events ?? [])
-        .map(normalizeEventItem);
-      const nextNotices =
-        (noticesPayload as { notices?: NoticeItem[] }).notices ?? [];
-      const nextImages =
-        (imagesPayload as { images?: GalleryImage[] }).images ?? [];
+      if (imagesRes.ok) {
+        const payload = await imagesRes.json().catch(() => ({}));
+        nextImages = (payload as { images?: GalleryImage[] }).images ?? [];
+      }
 
-      setEvents(nextEvents);
       setNotices(nextNotices);
       setImages(nextImages);
       window.dispatchEvent(new CustomEvent("admin:refresh"));
@@ -509,9 +463,9 @@ export function AdminPanel() {
   const stats = useMemo(
     () => [
       {
-        label: "Total Events",
-        value: events.length,
-        icon: CalendarDays,
+        label: "Total Courses",
+        value: 12,
+        icon: Shield,
         accent: "text-blue-600"
       },
       {
@@ -527,14 +481,8 @@ export function AdminPanel() {
         accent: "text-violet-600"
       }
     ],
-    [events.length, notices.length, images.length]
+    [notices.length, images.length]
   );
-
-  const upcomingEvents = useMemo(() => {
-    return [...events]
-      .sort((a, b) => +new Date(a.date) - +new Date(b.date))
-      .slice(0, 4);
-  }, [events]);
 
   const latestNotices = useMemo(() => {
     return [...notices]
@@ -664,119 +612,6 @@ export function AdminPanel() {
     }
   };
 
-  const onCreateEvent = async (event: FormEvent) => {
-    event.preventDefault();
-
-    try {
-      const payload = await apiRequest<{ message?: string; event: EventItem }>(
-        "/api/events",
-        {
-          method: "POST",
-          body: JSON.stringify(eventForm)
-        }
-      );
-
-      setEvents((current) => [normalizeEventItem(payload.event), ...current]);
-      setEventForm(initialEventForm);
-      addToast("success", payload.message ?? "Event created.");
-    } catch (error) {
-      addToast(
-        "error",
-        error instanceof Error ? error.message : "Unable to create event."
-      );
-    }
-  };
-
-  const startEditEvent = (item: EventItem) => {
-    setEditingEventId(item.id);
-    setEventEditForm({
-      title: item.title,
-      date: item.date,
-      location: item.location,
-      category: item.category,
-      type: item.type,
-      description: item.description
-    });
-  };
-
-  const saveEventEdit = async () => {
-    if (!editingEventId) {
-      return;
-    }
-
-    try {
-      const payload = await apiRequest<{ message?: string; event: EventItem }>(
-        `/api/events/${editingEventId}`,
-        {
-          method: "PUT",
-          body: JSON.stringify(eventEditForm)
-        }
-      );
-
-      setEvents((current) =>
-        current.map((item) =>
-          item.id === editingEventId
-            ? normalizeEventItem(payload.event)
-            : item
-        )
-      );
-
-      setEditingEventId(null);
-      addToast("success", payload.message ?? "Event updated.");
-    } catch (error) {
-      addToast(
-        "error",
-        error instanceof Error ? error.message : "Unable to update event."
-      );
-    }
-  };
-
-  const deleteEvent = (id: string) => {
-    requestConfirm({
-      title: "Delete Event",
-      message: "This event will be removed permanently.",
-      confirmLabel: "Delete",
-      action: async () => {
-        const payload = await apiRequest<ApiMessage>(`/api/events/${id}`, {
-          method: "DELETE"
-        });
-        setEvents((current) => current.filter((item) => item.id !== id));
-        addToast("success", payload.message ?? "Event deleted.");
-      }
-    });
-  };
-
-  const reorderEvents = async (dragEvent: DragEndEvent) => {
-    const { active, over } = dragEvent;
-
-    if (!over || active.id === over.id) {
-      return;
-    }
-
-    const fromIndex = events.findIndex((item) => item.id === String(active.id));
-    const toIndex = events.findIndex((item) => item.id === String(over.id));
-
-    if (fromIndex < 0 || toIndex < 0) {
-      return;
-    }
-
-    const previous = events;
-    const reordered = arrayMove(events, fromIndex, toIndex);
-    setEvents(reordered);
-
-    try {
-      await apiRequest<ApiMessage>("/api/events", {
-        method: "PATCH",
-        body: JSON.stringify({ ids: reordered.map((item) => item.id) })
-      });
-    } catch (error) {
-      setEvents(previous);
-      addToast(
-        "error",
-        error instanceof Error ? error.message : "Unable to reorder events."
-      );
-    }
-  };
   const onCreateNotice = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -797,6 +632,44 @@ export function AdminPanel() {
         "error",
         error instanceof Error ? error.message : "Unable to create notice."
       );
+    }
+  };
+
+  const handleAiClassify = async () => {
+    const promptText = noticeForm.content || noticeForm.title;
+    if (!promptText || promptText.trim().length < 5) {
+      addToast("error", "Enter notice text or title (min 5 chars) to auto-classify with AI.");
+      return;
+    }
+
+    setAiLoading(true);
+    try {
+      const payload = await apiRequest<{
+        message?: string;
+        classification?: { title: string; category: NoticeType; description: string };
+      }>("/api/admin/notices/ai-classify", {
+        method: "POST",
+        body: JSON.stringify({ text: promptText })
+      });
+
+      if (payload.classification) {
+        setNoticeForm((current) => ({
+          ...current,
+          title: payload.classification?.title || current.title,
+          type: payload.classification?.category || current.type,
+          content: payload.classification?.description || current.content
+        }));
+        addToast("success", "AI auto-classified notice successfully!");
+      }
+    } catch (error) {
+      addToast(
+        "error",
+        error instanceof Error
+          ? error.message
+          : "AI classification unconfigured. Please enter details manually."
+      );
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -1178,7 +1051,6 @@ export function AdminPanel() {
           onClick={onLogout}
           className="inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700"
         >
-          <LogOut className="h-4 w-4" />
           Logout
         </button>
       </div>
@@ -1239,121 +1111,93 @@ export function AdminPanel() {
 
         <div className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
           <div className="mx-auto w-full max-w-6xl">
-          <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h1 className="break-words text-xl font-semibold text-slate-900 sm:text-2xl dark:text-slate-100">
-                {sidebarItems.find((item) => item.key === activeSection)?.label}
-              </h1>
-              <p className="break-words text-sm text-slate-600 dark:text-slate-300">
-                Manage school content with secure controls and real-time updates.
-              </p>
-            </div>
-            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-              <Link
-                href="/"
-                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 sm:w-auto dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Home
-              </Link>
-              <button
-                type="button"
-                onClick={loadDashboardData}
-                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 sm:w-auto dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                {loadingData ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Refresh Data
-              </button>
-            </div>
-          </header>
+            <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h1 className="break-words text-xl font-semibold text-slate-900 sm:text-2xl dark:text-slate-100">
+                  {sidebarItems.find((item) => item.key === activeSection)?.label}
+                </h1>
+                <p className="break-words text-sm text-slate-600 dark:text-slate-300">
+                  Manage CICA Institute content with secure controls and real-time updates.
+                </p>
+              </div>
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                <Link
+                  href="/"
+                  className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 sm:w-auto dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to Home
+                </Link>
+                <button
+                  type="button"
+                  onClick={loadDashboardData}
+                  className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 sm:w-auto dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  {loadingData ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Refresh Data
+                </button>
+              </div>
+            </header>
 
-          {activeSection === "overview" ? (
-            <div className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-3">
-                {stats.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <article
-                      key={item.label}
-                      className="rounded-xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-sm text-slate-600 dark:text-slate-300">
-                            {item.label}
-                          </p>
-                          <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">
-                            {loadingData ? "-" : item.value}
-                          </p>
+            {activeSection === "overview" ? (
+              <div className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-3">
+                  {stats.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <article
+                        key={item.label}
+                        className="rounded-xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-sm text-slate-600 dark:text-slate-300">
+                              {item.label}
+                            </p>
+                            <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-slate-100">
+                              {loadingData ? "-" : item.value}
+                            </p>
+                          </div>
+                          <Icon className={`h-7 w-7 ${item.accent}`} />
                         </div>
-                        <Icon className={`h-7 w-7 ${item.accent}`} />
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900">
-                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                  Quick Actions
-                </h3>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("events")}
-                    className="min-h-[44px] rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
-                  >
-                    Add Event
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("notices")}
-                    className="min-h-[44px] rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
-                  >
-                    Add Notice
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("announcements")}
-                    className="min-h-[44px] rounded-full bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700"
-                  >
-                    Add Announcement
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSection("gallery")}
-                    className="min-h-[44px] rounded-full bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
-                  >
-                    Upload Images
-                  </button>
+                      </article>
+                    );
+                  })}
                 </div>
-              </div>
 
-              <div className="grid gap-6 lg:grid-cols-2">
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900">
                   <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                    Upcoming Events
+                    Quick Actions
                   </h3>
-                  <div className="mt-4 space-y-3">
-                    {upcomingEvents.length === 0 ? (
-                      <p className="text-sm text-slate-600 dark:text-slate-300">
-                        No events available yet.
-                      </p>
-                    ) : (
-                      upcomingEvents.map((item) => (
-                        <div
-                          key={item.id}
-                          className="rounded-lg border border-slate-200 p-3 dark:border-slate-700"
-                        >
-                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                            {item.title}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                            {formatPrettyDate(item.date)} | {item.location}
-                          </p>
-                        </div>
-                      ))
-                    )}
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection("courses")}
+                      className="min-h-[44px] rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+                    >
+                      Manage Courses
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection("notices")}
+                      className="min-h-[44px] rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                    >
+                      Add Notice
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection("announcements")}
+                      className="min-h-[44px] rounded-full bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700"
+                    >
+                      Add Announcement
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSection("gallery")}
+                      className="min-h-[44px] rounded-full bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
+                    >
+                      Upload Images
+                    </button>
                   </div>
                 </div>
 
@@ -1391,342 +1235,93 @@ export function AdminPanel() {
                   </div>
                 </div>
               </div>
-            </div>
-          ) : null}
-          {activeSection === "events" ? (
-            <div className="space-y-6">
-              <form
-                onSubmit={onCreateEvent}
-                className="rounded-xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900"
-              >
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  Create Event
-                </h3>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <input
-                    value={eventForm.title}
-                    onChange={(event) =>
-                      setEventForm((current) => ({
-                        ...current,
-                        title: event.target.value
-                      }))
-                    }
-                    placeholder="Title"
-                    required
-                    className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                  <input
-                    type="date"
-                    value={eventForm.date}
-                    onChange={(event) =>
-                      setEventForm((current) => ({
-                        ...current,
-                        date: event.target.value
-                      }))
-                    }
-                    required
-                    className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                  <input
-                    value={eventForm.location}
-                    onChange={(event) =>
-                      setEventForm((current) => ({
-                        ...current,
-                        location: event.target.value
-                      }))
-                    }
-                    placeholder="Location"
-                    required
-                    className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                  <input
-                    value={eventForm.category}
-                    onChange={(event) =>
-                      setEventForm((current) => ({
-                        ...current,
-                        category: event.target.value
-                      }))
-                    }
-                    placeholder="Category"
-                    required
-                    className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                  <select
-                    value={eventForm.type}
-                    onChange={(event) =>
-                      setEventForm((current) => ({
-                        ...current,
-                        type: event.target.value as EventFormState["type"]
-                      }))
-                    }
-                    className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    <option value="event">Event</option>
-                    <option value="exam">Exam</option>
-                  </select>
-                  <button
-                    type="submit"
-                    className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Event
-                  </button>
-                </div>
-                <textarea
-                  rows={4}
-                  value={eventForm.description}
-                  onChange={(event) =>
-                    setEventForm((current) => ({
-                      ...current,
-                      description: event.target.value
-                    }))
-                  }
-                  placeholder="Description"
-                  required
-                  className="mt-3 w-full min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-                />
-              </form>
+            ) : null}
 
-              {loadingData ? (
-                <div className="space-y-3">
-                  {[0, 1, 2].map((item) => (
-                    <div
-                      key={item}
-                      className="h-28 animate-pulse rounded-xl bg-slate-200 dark:bg-slate-800"
-                    />
-                  ))}
-                </div>
-              ) : (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={reorderEvents}
+            {activeSection === "notices" ? (
+              <div className="space-y-6">
+                <form
+                  onSubmit={onCreateNotice}
+                  className="rounded-xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900"
                 >
-                  <SortableContext
-                    items={events.map((item) => item.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="space-y-3">
-                      {events.map((item) => (
-                        <SortableListItem key={item.id} id={item.id}>
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="break-words text-base font-semibold text-slate-900 dark:text-slate-100">
-                                  {item.title}
-                                </p>
-                                <p className="mt-1 break-words text-sm text-slate-600 dark:text-slate-300">
-                                  {item.description}
-                                </p>
-                              </div>
-                              <div className="flex flex-wrap items-center justify-end gap-2">
-                                <span className="rounded-full border border-slate-200 px-2 py-0.5 text-xs font-semibold uppercase text-slate-700 dark:border-slate-700 dark:text-slate-200">
-                                  {item.type}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => startEditEvent(item)}
-                                  className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium dark:border-slate-700"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => deleteEvent(item.id)}
-                                  className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-700 dark:border-rose-800 dark:text-rose-300"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Delete
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap gap-3 text-xs text-slate-600 dark:text-slate-300">
-                              <span className="inline-flex break-words items-center gap-1">
-                                <CalendarDays className="h-3.5 w-3.5" />
-                                {formatPrettyDate(item.date)}
-                              </span>
-                              <span className="inline-flex break-words items-center gap-1">
-                                <MapPin className="h-3.5 w-3.5" />
-                                {item.location}
-                              </span>
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 dark:bg-slate-800">
-                                {item.category}
-                              </span>
-                            </div>
-
-                            {editingEventId === item.id ? (
-                              <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-950">
-                                <input
-                                  value={eventEditForm.title}
-                                  onChange={(event) =>
-                                    setEventEditForm((current) => ({
-                                      ...current,
-                                      title: event.target.value
-                                    }))
-                                  }
-                                  className="min-h-[40px] rounded-md border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                                />
-                                <input
-                                  type="date"
-                                  value={eventEditForm.date}
-                                  onChange={(event) =>
-                                    setEventEditForm((current) => ({
-                                      ...current,
-                                      date: event.target.value
-                                    }))
-                                  }
-                                  className="min-h-[40px] rounded-md border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                                />
-                                <input
-                                  value={eventEditForm.location}
-                                  onChange={(event) =>
-                                    setEventEditForm((current) => ({
-                                      ...current,
-                                      location: event.target.value
-                                    }))
-                                  }
-                                  className="min-h-[40px] rounded-md border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                                />
-                                <input
-                                  value={eventEditForm.category}
-                                  onChange={(event) =>
-                                    setEventEditForm((current) => ({
-                                      ...current,
-                                      category: event.target.value
-                                    }))
-                                  }
-                                  className="min-h-[40px] rounded-md border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                                />
-                                <select
-                                  value={eventEditForm.type}
-                                  onChange={(event) =>
-                                    setEventEditForm((current) => ({
-                                      ...current,
-                                      type: event.target.value as EventFormState["type"]
-                                    }))
-                                  }
-                                  className="min-h-[40px] rounded-md border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                                >
-                                  <option value="event">Event</option>
-                                  <option value="exam">Exam</option>
-                                </select>
-                                <textarea
-                                  rows={3}
-                                  value={eventEditForm.description}
-                                  onChange={(event) =>
-                                    setEventEditForm((current) => ({
-                                      ...current,
-                                      description: event.target.value
-                                    }))
-                                  }
-                                  className="min-h-[40px] rounded-md border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                                />
-                                <div className="flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={saveEventEdit}
-                                    className="min-h-[36px] rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingEventId(null)}
-                                    className="min-h-[36px] rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold dark:border-slate-700"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-                        </SortableListItem>
-                      ))}
-
-                      {events.length === 0 ? (
-                        <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                          No events yet.
-                        </p>
-                      ) : null}
-                    </div>
-                  </SortableContext>
-                </DndContext>
-              )}
-            </div>
-          ) : null}
-
-          {activeSection === "notices" ? (
-            <div className="space-y-6">
-              <form
-                onSubmit={onCreateNotice}
-                className="rounded-xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900"
-              >
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  Create Notice
-                </h3>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <input
-                    value={noticeForm.title}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                      Create Notice
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={handleAiClassify}
+                      disabled={aiLoading}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 transition hover:bg-purple-100 disabled:opacity-50 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300"
+                    >
+                      {aiLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      {aiLoading ? "Classifying..." : "✨ AI Assist / Auto-Classify"}
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <input
+                      value={noticeForm.title}
+                      onChange={(event) =>
+                        setNoticeForm((current) => ({
+                          ...current,
+                          title: event.target.value
+                        }))
+                      }
+                      placeholder="Title"
+                      required
+                      className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+                    />
+                    <input
+                      type="date"
+                      value={noticeForm.date}
+                      onChange={(event) =>
+                        setNoticeForm((current) => ({
+                          ...current,
+                          date: event.target.value
+                        }))
+                      }
+                      required
+                      className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+                    />
+                    <select
+                      value={noticeForm.type}
+                      onChange={(event) =>
+                        setNoticeForm((current) => ({
+                          ...current,
+                          type: event.target.value as NoticeType
+                        }))
+                      }
+                      className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="holiday">Holiday</option>
+                      <option value="observation">Observation</option>
+                    </select>
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Notice
+                    </button>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={noticeForm.content}
                     onChange={(event) =>
                       setNoticeForm((current) => ({
                         ...current,
-                        title: event.target.value
+                        content: event.target.value
                       }))
                     }
-                    placeholder="Title"
+                    placeholder="Notice content"
                     required
-                    className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+                    className="mt-3 w-full min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
                   />
-                  <input
-                    type="date"
-                    value={noticeForm.date}
-                    onChange={(event) =>
-                      setNoticeForm((current) => ({
-                        ...current,
-                        date: event.target.value
-                      }))
-                    }
-                    required
-                    className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                  <select
-                    value={noticeForm.type}
-                    onChange={(event) =>
-                      setNoticeForm((current) => ({
-                        ...current,
-                        type: event.target.value as NoticeType
-                      }))
-                    }
-                    className="min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    <option value="daily">Daily</option>
-                    <option value="holiday">Holiday</option>
-                    <option value="observation">Observation</option>
-                  </select>
-                  <button
-                    type="submit"
-                    className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Notice
-                  </button>
-                </div>
-                <textarea
-                  rows={4}
-                  value={noticeForm.content}
-                  onChange={(event) =>
-                    setNoticeForm((current) => ({
-                      ...current,
-                      content: event.target.value
-                    }))
-                  }
-                  placeholder="Notice content"
-                  required
-                  className="mt-3 w-full min-h-[44px] rounded-lg border border-slate-200 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-                />
-              </form>
+                </form>
 
               {loadingData ? (
                 <div className="space-y-3">
@@ -2150,42 +1745,7 @@ export function AdminPanel() {
             </div>
           ) : null}
 
-          {activeSection === "popup" ? (
-  <div className="space-y-6 ">
-    <div className="rounded-xl border p-5 bg-white dark:bg-slate-900">
-      <h3 className="text-lg font-semibold mb-3">Event Popup</h3>
-
-      <input
-        type="text"
-        placeholder="Enter image URL"
-        value={popupImage}
-        onChange={(e) => setPopupImage(e.target.value)}
-        className="w-full mb-3 p-2 border rounded"
-      />
-
-      <label className="flex items-center gap-2 mb-3">
-        <input
-          type="checkbox"
-          checked={popupActive}
-          onChange={(e) => setPopupActive(e.target.checked)}
-        />
-        Enable Popup
-      </label>
-
-      <button
-        onClick={() => {
-          addToast("success", "Popup saved (UI only)");
-          console.log({ popupImage, popupActive });
-        }}
-        className="bg-blue-600 text-white px-4 py-2 rounded"
-      >
-        Save Popup
-      </button>
-    </div>
-  </div>
-) : null}
-
-          {activeSection === "staff" ? (
+          {activeSection === "courses" ? (
             <AdminStaffManager
               apiRequest={apiRequest}
               addToast={addToast}

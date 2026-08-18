@@ -80,29 +80,61 @@ export function parseTeacherFormData(
 }
 
 export async function listTeachers(): Promise<Teacher[]> {
-  const [records, pdfMap] = await Promise.all([
-    prisma.teacher.findMany({
-      orderBy: [{ createdAt: "desc" }]
-    }),
-    getStaffPdfRecordMapByStaffId()
-  ]);
+  try {
+    const [records, pdfMap] = await Promise.all([
+      prisma.teacher.findMany({
+        orderBy: [{ createdAt: "desc" }]
+      }),
+      getStaffPdfRecordMapByStaffId()
+    ]);
 
-  return records.map((record) =>
-    toTeacher(record, pdfMap.get(record.id))
-  );
+    if (records.length > 0) {
+      return records.map((record) =>
+        toTeacher(record, pdfMap.get(record.id))
+      );
+    }
+  } catch {
+    // Fall back to local course data
+  }
+
+  const { courseItems } = await import("@/lib/constants");
+  return courseItems.map((c) => ({
+    id: c.id,
+    name: c.name,
+    subject: c.level,
+    description: c.description,
+    imageUrl: c.image,
+    publicId: `local:${c.id}`
+  }));
 }
 
 export async function listTeacherStaffMembers(): Promise<StaffMember[]> {
-  const [records, pdfMap] = await Promise.all([
-    prisma.teacher.findMany({
-      orderBy: [{ createdAt: "desc" }]
-    }),
-    getStaffPdfRecordMapByStaffId()
-  ]);
+  try {
+    const [records, pdfMap] = await Promise.all([
+      prisma.teacher.findMany({
+        orderBy: [{ createdAt: "desc" }]
+      }),
+      getStaffPdfRecordMapByStaffId()
+    ]);
 
-  return records.map((record) =>
-    toStaffMember(record, pdfMap.get(record.id))
-  );
+    if (records.length > 0) {
+      return records.map((record) =>
+        toStaffMember(record, pdfMap.get(record.id))
+      );
+    }
+  } catch {
+    // Fall back to local course data
+  }
+
+  const { courseItems } = await import("@/lib/constants");
+  return courseItems.map((c) => ({
+    id: c.id,
+    name: c.name,
+    subject: c.level,
+    bio: c.description,
+    photo: c.image,
+    publicId: `local:${c.id}`
+  }));
 }
 
 export async function createTeacher(input: TeacherInput & { imageFile: File }) {

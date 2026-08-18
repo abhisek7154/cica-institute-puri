@@ -36,7 +36,12 @@ export const noticeSchema = z.object({
   title: z.string().min(3),
   content: z.string().min(8),
   date: z.string().min(8),
-  type: z.enum(["daily", "holiday", "observation"])
+  type: z.enum(["daily", "holiday", "observation"]),
+  gcalEventId: z.string().optional()
+});
+
+export const aiClassifySchema = z.object({
+  text: z.string().min(5, "Raw notice text is too short for classification.")
 });
 
 export const announcementCreateSchema = z.object({
